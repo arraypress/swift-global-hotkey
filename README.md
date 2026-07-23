@@ -13,11 +13,13 @@ Unlike Carbon `RegisterEventHotKey`-based libraries, an event tap gets you **key
 - ✨ **Hyper key** — turn one key into ⌘⌃⌥⇧, with direct chord bindings
 - 🔁 **Dual-role** — a quick tap of the hyper trigger can emit a fallback key (e.g. Caps Lock → Escape)
 - 🤫 **Key suppression** — the trigger key is swallowed so it doesn't type or scroll
+- ⌨️ **User-recordable** — a SwiftUI `HotkeyRecorder` field + typed `Name`s + UserDefaults persistence
+- 🔤 **Caps Lock helper** — remap Caps Lock → F18 via `hidutil` so it can drive a hyper key
 - 🧯 **Robust** — auto re-enables if the OS disables the tap, and ends any in-flight hold
 - 🧵 **Main-thread callbacks** — handlers are delivered on the main actor
 - 🔐 **Permission helpers** — check, request, and deep-link to Accessibility settings
 - 🧪 **Pure, tested state machines** — the hold/hyper decision logic is unit-tested independent of AppKit
-- 🪶 **Zero dependencies** — AppKit and ApplicationServices only
+- 🪶 **Zero dependencies** — AppKit, SwiftUI, and ApplicationServices only
 
 ## Requirements
 
@@ -58,6 +60,34 @@ A custom chord:
 let hotkey = PushToTalkHotkey(chord: .init(keyCode: 0x0C, modifiers: [.maskCommand])) // hold ⌘Q
 ```
 
+### User-Recordable Shortcuts (SwiftUI)
+
+Let users pick their own shortcut — a typed `Name`, a `HotkeyRecorder` field, automatic UserDefaults persistence, and a managed hotkey that rebuilds itself when the shortcut changes.
+
+```swift
+import GlobalHotkey
+
+extension GlobalHotkey.Name {
+    static let pushToTalk = Self("pushToTalk")
+}
+
+// At startup — reads the stored shortcut and (re)installs the hotkey on change:
+GlobalHotkey.onHold(
+    for: .pushToTalk,
+    keyDown: { startRecording() },
+    keyUp: { stopRecording() }
+)
+
+// In your Settings UI — click, press your shortcut, it saves itself:
+Form {
+    LabeledContent("Push to talk") {
+        HotkeyRecorder(for: .pushToTalk)
+    }
+}
+```
+
+`⌫` clears the shortcut, `⎋` cancels recording. To store in a shared app-group suite, set `GlobalHotkey.defaults` before use.
+
 ### Hyper Key
 
 ```swift
@@ -78,13 +108,15 @@ Keys you don't bind are passed through with the four modifiers applied, so anyth
 
 ### Caps Lock as the trigger
 
-Caps Lock emits a toggle (`flagsChanged`), not a clean key-down/up, so it can't be a trigger directly. Remap it to F18 first with `hidutil`, then use `0x4F` as the trigger:
+Caps Lock emits a toggle (`flagsChanged`), not a clean key-down/up, so it can't be a trigger directly. Remap it to F18 (virtual key `0x4F`) with the built-in helper, then use `0x4F` as the trigger:
 
-```bash
-hidutil property --set '{"UserKeyMapping":[{"HIDKeyboardModifierMappingSrc":0x700000039,"HIDKeyboardModifierMappingDst":0x70000006D}]}'
+```swift
+CapsLockRemap.remap()                 // Caps Lock → F18 (call on launch)
+let hyper = HyperKey(triggerKey: 0x4F, tapKey: 0x35)  // tap still types Escape
+// CapsLockRemap.reset()              // restore default Caps Lock behavior
 ```
 
-The remap resets on reboot/replug — persist it with a `LaunchAgent` or re-apply on app launch. (A built-in Caps Lock helper is on the roadmap.)
+The remap is applied at the HID layer and **resets on reboot/replug** (no permission needed), so call `CapsLockRemap.remap()` on app launch, or install a `LaunchAgent` to persist it.
 
 ### Accessibility Permission
 
@@ -118,7 +150,8 @@ swift test
 
 Tests exhaustively cover both state machines — press/repeat/release, dropped
 modifiers, dual-role tap emission, bound vs unbound keys, and suppression —
-plus configuration, bindings, and lifecycle.
+plus the `Shortcut` model, UserDefaults persistence, the `hidutil` payload,
+configuration, bindings, and lifecycle.
 
 ## License
 
